@@ -1,0 +1,558 @@
+---
+title: "Projet ACP"
+author: "Jules Marin et Antton Goyhetche"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: null
+    css: projet.css
+    highlight: kate
+  pdf_document: default
+lang: "fr-FR"
+subtitle: Analyse ACP de données atmosphérique
+---
+
+# 0: Mise en place de l'environnement:
+
+```{r}
+# Chargement des librairies nécessaires:
+suppressWarnings(
+  suppressPackageStartupMessages({
+    library(MASS) # chargé avant dplyr pour que MASS::select ne masque pas dplyr::select
+    library(tidyr) 
+    library(dplyr) 
+    library(ggplot2) 
+    library(lubridate) # gestion des formats de date 
+    library(FactoMineR)
+    library(corrplot)
+    library(factoextra)
+    library(plotly)  
+    library(naniar) # manipulation des données manquantes
+    # library(Factoshiny) # si on veut faire de l'ACP en dynamique, ie explorer et voir directement le rendu
+  })
+)
+```
+
+```{r}
+# Chargement des données:
+load("data/ATMO-RDSM2.rda")
+```
+
+# 1: 1ère Analyse:
+
+## 1.1: Construire la matrice de corrélation des variables quantitatives, analyser globalement.
+
+```{r}
+# Sélection des variables quantitatives
+atmo_num <- atmo |> select(
+  heure, heure2, mois,
+  NO2, NO, O3, PM10,
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+)
+```
+
+### Le jeu de données ATMO regroupe des mesures horaires de pollution atmosphérique (NO, NO₂, O₃, PM10) et de variables météorologiques (température, humidité, pression, précipitations, vent, point de rosée). Après suppression des variables de date et de jour, une analyse exploratoire est menée afin d’identifier les structures principales du jeu de données et les relations entre polluants et conditions météorologiques.
+
+```{r}
+# Conversion en numérique si nécessaire
+atmo_num <- atmo_num |> mutate(across(everything(), as.numeric))
+
+# Matrice de corrélation
+cor_mat <- cor(atmo_num, use = "pairwise.complete.obs")
+round(cor_mat, 2)
+```
+
+```{r}
+# Corrplot en cercles
+corrplot(cor_mat, method = "circle", type = "upper",
+  tl.col = "black", tl.srt = 45,
+  title = "Matrice corrélation", mar = c(0,0,1,0)
+)
+```
+
+
+### La matrice de corrélation met en évidence une structuration nette des variables : les polluants issus du trafic (NO, NO₂, PM10) sont fortement corrélés entre eux, traduisant une origine commune et une évolution parallèle, tandis que l’ozone présente des corrélations négatives marquées avec les NOx, reflétant la dynamique photochimique quotidienne qui oppose formation diurne de l’O₃ et destruction nocturne par les oxydes d’azote. Le cycle journalier apparaît clairement à travers la variable heure2, positivement corrélée à l’humidité et négativement à la température et à l’ozone, illustrant des conditions nocturnes plus fraîches, plus humides et moins riches en O₃. Les variables météorologiques montrent enfin une cohérence interne, notamment la relation négative entre la pression et les précipitations, typique des situations dépressionnaires. Ces résultats justifient l’utilisation d’une ACP pour synthétiser l’information.
+
+## 1.2: Construire la matrice de corrélation des variables quantitatives mesurées à midi chaque jour, analyser globalement et comparer avec les résultats précédents.
+```{r}
+# Filtrer les observations mesurées à midi (12h)
+atmo_midi <- atmo |> filter(heure == 12)
+
+# Sélection des variables quantitatives
+atmo_midi_num <- atmo_midi |> select(
+  heure, heure2, mois,
+  NO2, NO, O3, PM10,
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+)
+
+# Conversion en numérique si nécessaire
+atmo_midi_num <- atmo_midi_num |> mutate(across(everything(), as.numeric))
+
+# Matrice de corrélation
+atmo_midi_num <- atmo_midi_num |> select(-heure, -heure2) # on retire heure et heure2 car, à midi, ces variables sont constantes et produisent des corrélations indéfinies (NA).
+cor_midi <- cor(atmo_midi_num, use="pairwise.complete.obs")
+round(cor_midi, 2)
+```
+
+```{r}
+# Visualisation:
+corrplot(
+  cor_midi,
+  method = "circle",
+  type = "upper",
+  diag = TRUE,   # force l'affichage de la diagonale
+  tl.col = "black",
+  tl.srt = 45,
+  title = "Matrice corrélation",
+  mar = c(0,0,1,0)
+)
+
+```
+
+### La matrice de corrélation restreinte aux mesures de midi retrouve les grandes relations déjà observées : NO et NO₂ restent fortement associés, tandis que leur lien avec PM10 se réduit légèrement. L’opposition entre l’ozone et les NOx apparaît plus marquée qu’en analyse globale, ce qui reflète le pic photochimique de la mi-journée. Les corrélations météorologiques deviennent plus homogènes, car les variations liées au cycle jour/nuit disparaissent. Cette matrice met donc davantage en évidence les mécanismes atmosphériques propres aux conditions de midi, en particulier la dynamique de l’O₃.
+
+
+## 1.3: En se focalisant sur le polluant Ozone (O3), identifier quelques variables statistiquement liées à l’ozone et tracer des graphiques pertinents pour visualiser ce lien.
+
+```{r}
+# Corrélations avec l'ozone
+round(cor(atmo_num, use = "pairwise.complete.obs")["O3", ], 2)
+```
+
+### Nous avons retenu l’humidité, l’heure, le NO₂ et la température car ce sont les variables présentant les liens statistiques les plus marqués avec l’ozone, et elles représentent respectivement l’effet météorologique, le cycle diurne, l’influence des NOx et les conditions favorables à la production photochimique de l’O₃.
+
+```{r}
+# O3 vs N02
+ggplot(atmo, aes(x = NO2, y = O3)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "NO2", y = "O3",
+       title = "Lien entre O3 et NO2") +
+  theme_minimal()
+```
+
+```{r}
+# O3 vs heure
+ggplot(atmo, aes(x = heure, y = O3)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Heure", y = "O3",
+       title = "Cycle journalier de l'ozone") +
+  scale_x_continuous(breaks = 0:23) +
+  theme_minimal()
+```
+```{r}
+# O3 et température
+ggplot(atmo, aes(x = temperature, y = O3)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Température", y = "O3",
+       title = "O3 en fonction de la température") +
+  theme_minimal()
+```
+
+
+```{r}
+# O3 vs humidité
+ggplot(atmo, aes(x = humidite, y = O3)) +
+  geom_point(alpha = 0.15) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Humidité (%)", y = "Ozone (O3)",
+       title = "Relation entre l'humidité et l'ozone") +
+  theme_minimal()
+```
+
+### Le graphique O₃–NO₂ montre une relation négative nette : plus les concentrations de NO₂ sont élevées, plus l’ozone est faible, ce qui traduit la destruction de l’O₃ en présence de NOx. Le cycle diurne O₃–heure met en évidence une augmentation progressive de l’ozone jusqu’aux heures centrales de la journée, confirmant la dynamique photochimique maximale en début d’après-midi. La relation O₃–température est croissante : les niveaux d’ozone augmentent lorsque la température s’élève, ce qui correspond à des conditions plus ensoleillées favorisant sa formation. Enfin, O₃–humidité montre une relation décroissante, l’ozone étant plus faible lorsque l’humidité est élevée, cohérent avec des situations nuageuses ou nocturnes défavorables à la production d’O₃.
+
+
+## 1.4: Faire l’Analyse en Composantes Principales du jeu de données complet.
+
+### Cette première ACP est réalisée sur l’ensemble des variables météorologiques et de pollution (variables quantitatives continues), après centrage et réduction, afin d’explorer la structure globale des corrélations entre conditions atmosphériques et niveaux de pollution.
+```{r}
+atmo_acp <- atmo |> select(
+  NO2, NO, O3, PM10,
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+)
+
+# Conversion numérique
+atmo_acp <- atmo_acp |> mutate(across(everything(), as.numeric))
+
+res_pca <- PCA(atmo_acp, scale.unit = TRUE, graph = FALSE)
+res_pca
+```
+
+
+```{r}
+# Graphique général ACP (individus + variables)
+fviz_pca_biplot(
+  res_pca,
+  repel = TRUE,
+  title = "ACP - Plan factoriel (1-2)",
+  col.ind = "grey40",
+  col.var = "red",
+  geom.ind = "point"
+)
+```
+
+
+### L’Analyse en Composantes Principales réalisée sur l’ensemble des variables quantitatives (hors date, jour et heure) met en évidence deux axes principaux. La première composante oppose clairement les polluants liés au trafic (NO, NO₂, PM10) à l’ozone, traduisant un gradient entre pollution primaire et pollution photochimique. La seconde composante est dominée par les variables météorologiques et distingue des situations chaudes et sèches de situations fraîches et humides. Les contributions et les qualités de représentation montrent que les polluants sont principalement portés par le premier axe, tandis que les variables météorologiques structurent davantage le second.
+
+```{r}
+# Identifier les individus ayant (Dim1 < –3) ET (Dim2 < –3)
+coords <- res_pca$ind$coord
+# Sélection des individus situés dans le quadrant bas-gauche du plan 1-2
+
+atmo_plot <- atmo |>
+  mutate(
+    Dim1 = coords[,1],
+    Dim2 = coords[,2],
+    selection = ifelse(Dim1 < -3 & Dim2 < -3, "Sélection", "Autres")
+  )
+```
+
+```{r}
+ggplot(atmo_plot, aes(x = Dim1, y = Dim2, color = selection)) +
+  geom_point(alpha = 0.6) +
+  scale_color_manual(values = c("Autres" = "grey70", "Sélection" = "red")) +
+  labs(
+    title = "ACP - Indicateurs ayant Dim1 < -3 et Dim2 < -3",
+    x = "Dimension 1",
+    y = "Dimension 2",
+    color = ""
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed")
+```
+
+### Le groupe d’individus sélectionné (Dim1 < −3 et Dim2 < −3) correspond à des situations météorologiques extrêmes associées à des températures élevées, une atmosphère sèche et ventilée, ainsi qu’à de faibles concentrations de polluants primaires. Ces conditions sont typiques d’épisodes estivaux favorables à la dispersion des NOx et des particules, mais propices à des niveaux relativement élevés d’ozone. Ces caractéristiques correspondent à des conditions particulièrement favorables à la formation photochimique de l’ozone, confirmant l’interprétation des axes de l’ACP.
+
+```{r}
+# Analyse stat
+# Ajout des coordonnées et sélection
+atmo_stats <- atmo |> mutate(
+  Dim1 = coords[,1],
+  Dim2 = coords[,2],
+  selection = (Dim1 < -3 & Dim2 < -3)
+)
+```
+
+
+```{r}
+# Moyennes du groupe sélectionné
+mean_sel <- atmo_stats |>
+  filter(selection) |>
+  summarise(
+    across(
+      c(NO2, NO, O3, temperature, humidite),
+      \(x) mean(x, na.rm = TRUE)
+    )
+  )
+
+mean_sel
+```
+
+
+```{r}
+# Moyennes globales pour comparaison
+mean_global <- atmo_stats |>
+  summarise(
+    across(
+      c(NO2, NO, O3, temperature, humidite),
+      \(x) mean(x, na.rm = TRUE)
+    )
+  )
+
+mean_global
+```
+
+### L’analyse statistique montre que les individus situés dans le quadrant ciblé présentent des niveaux moyens d’ozone nettement plus élevés (≈102 contre 50 en global), associés à des conditions chaudes (35°C contre 13°C en moyenne) et sèches (humidité ≈35 % contre 82 % globalement). Parallèlement, les concentrations de NO et NO₂ y sont nettement plus faibles que les moyennes générales, ce qui est cohérent avec la forte opposition photochimique entre l’ozone et les NOx. Ce profil caractérise des périodes très favorables à la formation d’O3, marquées par un air sec, une température élevée et une faible présence de polluants réducteurs, conditions typiques d’épisodes d’ozone estival intense.
+
+### Les écarts importants entre les moyennes du groupe et les moyennes globales confirment statistiquement que ces instants correspondent à des situations météorologiques et chimiques propices à la production d’ozone.
+
+
+## 1.5: On se focalise sur les données observées à midi.
+
+```{r}
+# Variables pollution + météo (hors dates, jour, heure, j'ai aussi retirer mois comme ça il n'y a aucune var temporelle)
+atmo_midi_acp <- atmo_midi |> select(
+  NO2, NO, O3, PM10,
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+) |> mutate(across(everything(), as.numeric))
+
+# ACP
+res_pca_midi <- PCA(atmo_midi_acp, scale.unit = TRUE, graph = FALSE)
+```
+
+```{r}
+fviz_pca_var(
+  res_pca_midi,
+  repel = TRUE
+)
+```
+
+### La Dimension 1 oppose les polluants du trafic (NO, NO₂) à l’ozone, reflétant l’opposition entre pollution primaire et production photochimique. La Dimension 2 sépare les situations chaudes et sèches des situations fraîches et humides. Ces deux axes expliquent ainsi la répartition saisonnière observée dans le nuage des individus.
+
+```{r}
+# Représentation des individus colorés par mois
+fviz_pca_ind(
+  res_pca_midi,
+  habillage = atmo_midi$mois,
+  addEllipses = TRUE,
+  geom = "point",
+  label = "none",
+  title = "ACP à midi - Par mois"
+)
+```
+
+### En se restreignant aux observations réalisées à midi, l’ACP met en évidence une structuration saisonnière nette. Le nuage des individus coloré par mois montre que les mois d’été se regroupent dans les zones associées à des températures élevées et à des concentrations importantes d’ozone, tandis que les mois d’hiver sont davantage liés aux NOx et à une humidité plus forte. La première composante oppose à nouveau ozone et polluants du trafic, tandis que la seconde traduit un gradient climatique humidité–température.
+
+
+## 1.6: On se focalise sur les données observées à 18h.
+```{r}
+# Filtrer les données observées à 18h
+atmo_18h <- atmo |> filter(heure == 18)
+
+# Sélection météo + pollution
+atmo_18h_acp <- atmo_18h |> select(
+  NO2, NO, O3, PM10,
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+) |> mutate(across(everything(), as.numeric))
+
+# ACP
+res_pca_18h <- PCA(atmo_18h_acp, scale.unit = TRUE, graph = FALSE)
+```
+
+```{r}
+fviz_pca_var(
+  res_pca_18h,
+  repel = TRUE
+)
+```
+
+### La Dimension 1 oppose les NOx (NO, NO₂) et PM10 — orientés vers la droite — à l’ozone, orienté vers la gauche. Cela exprime le contraste entre pollution du trafic et production photochimique. La Dimension 2 est principalement structurée par les variables météorologiques : l’humidité et la pluie se projettent en haut, tandis que la température, la pression et le vent se projettent plutôt en bas, traduisant un gradient conditions humides/fraîches vs conditions sèches/chaudes.
+
+
+```{r}
+# Nuage des individus colorés par mois
+fviz_pca_ind(
+  res_pca_18h,
+  habillage = atmo_18h$mois,
+  addEllipses = TRUE,
+  label = "none",
+  title = "ACP à 18h - Par mois"
+)
+```
+
+### Le nuage des individus montre encore une organisation saisonnière : les mois d’été apparaissent du côté associé à des niveaux d’ozone plus élevés, tandis que les mois d’hiver se regroupent du côté des NOx. Cette séparation est plus diffuse qu’à midi, ce qui reflète la baisse de la photochimie en fin d’après-midi et la plus grande variabilité des conditions météorologiques à 18h.
+
+## Conclusion de la première partie:
+
+### Cette première Analyse en Composantes Principales met en évidence une structuration claire des relations entre variables météorologiques et niveaux de pollution. L’axe 1 apparaît comme un gradient opposant des situations caractérisées par de fortes concentrations de polluants à des conditions météorologiques favorables à leur dispersion, traduisant ainsi une opposition marquée entre pollution atmosphérique et paramètres météorologiques. L’axe 2, quant à lui, capture une variabilité complémentaire, associée à des différences plus fines dans les conditions atmosphériques, suggérant l’existence de régimes distincts au sein des observations. Bien que le plan factoriel (1,2) n’explique qu’une part modérée de l’inertie totale, il permet néanmoins d’identifier des relations robustes et cohérentes entre les variables, justifiant son utilisation à des fins exploratoires. L’analyse des contributions et des qualités de représentation confirme que l’interprétation repose principalement sur les variables les mieux projetées sur ce plan. Enfin, cette première ACP fournit un cadre synthétique pertinent pour comprendre les interactions globales entre météo et pollution, tout en rappelant que les résultats obtenus relèvent de relations de corrélation et non de causalité. Elle constitue ainsi une base solide pour des analyses complémentaires visant à approfondir ces dynamiques à des échelles temporelles ou structurelles différentes.
+
+
+
+# 2: 2ème Analyses: 
+
+```{r}
+atmo <- atmo %>%
+  mutate(date = as.Date(date_debut))
+
+atmo2 <- atmo %>%
+  group_by(date) %>%
+  summarise(
+    across(
+      where(is.numeric),
+      \(x) mean(x, na.rm = TRUE)
+    )
+  ) %>%
+  ungroup() %>%
+  dplyr::select(!c(heure, heure2))
+
+atmo2$mois <- as.factor(month(atmo2$date))
+atmo2$jour <- wday(atmo2$date,label=TRUE,abbr=FALSE)
+```
+
+
+## 2.1: Appliquer une ACP sur les variables de pollution en mettant les variables météo en supplémentaires. Commentez.
+
+```{r}
+# Sélection des variables de pollution (actives)
+pollution <- atmo2 %>% select(NO2, NO, O3, PM10)
+```
+
+```{r}
+# Sélection des variables météo (supplémentaires)
+meteo <- atmo2 %>% select(
+  temperature, humidite, pression,
+  pression_variation_3h, point_de_rosee,
+  vent_moyen, pluie_24h, pluie_6h
+)
+```
+
+```{r}
+# ACP : pollution active, météo supplémentaire
+res_pca_poll <- PCA(
+  pollution,
+  scale.unit = TRUE,
+  quanti.sup = NULL,
+  graph = FALSE
+)
+res_pca_poll$call$centre # moyenne
+```
+
+```{r}
+# Projection des variables météo en supplémentaires
+res_pca_poll <- PCA(
+  atmo2 %>% select(NO2, NO, O3, PM10,
+                   temperature, humidite, pression,
+                   pression_variation_3h, point_de_rosee,
+                   vent_moyen, pluie_24h, pluie_6h),
+  scale.unit = TRUE,
+  quanti.sup = 5:12,
+  graph = FALSE
+)
+```
+
+### Les variables de météo sont introduites comme variables quantitatives supplémentaires ; elles ne contribuent pas à la construction des axes mais sont projetées a posteriori afin d’enrichir l’interprétation
+
+```{r}
+fviz_pca_biplot(
+  res_pca_poll,
+  label = "var",        # uniquement les variables (flèches)
+  repel = TRUE,
+  col.ind = "grey60",   # individus discrets
+  col.var = "black",    # flèches bien visibles
+  ggtheme = theme_bw()
+) +
+  theme(
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text  = element_text(size = 12)
+  )
+```
+
+### L’ACP réalisée sur les moyennes journalières des variables de pollution met en évidence une structuration dominée par l’opposition entre les polluants primaires du trafic (NO et NO₂) et l’ozone. Cette opposition, portée par la première composante principale, traduit clairement la dynamique photochimique de l’O₃ et son antagonisme avec les NOx. La seconde composante rend compte d’une variabilité plus diffuse, notamment liée aux concentrations de PM10. La projection des variables météorologiques en supplémentaires confirme l’interprétation des axes : la température est associée aux situations riches en ozone, tandis que l’humidité, la pression et les précipitations se projettent du côté des NOx, indiquant que les conditions chaudes et sèches favorisent la formation d’ozone alors que les conditions plus humides et stables sont associées à une pollution primaire plus marquée. Cette ACP montre ainsi que la variabilité journalière de l’ozone résulte de l’interaction entre les émissions de polluants et les conditions météorologiques.
+
+
+## 2.2: Inverser les variables actives (météo) et les variables supplémentaires (pollution). Commentez.
+
+```{r}
+res_pca_meteo <- PCA(
+  atmo2 %>% select(NO2, NO, O3, PM10,
+                   temperature, humidite, pression,
+                   pression_variation_3h, point_de_rosee,
+                   vent_moyen, pluie_24h, pluie_6h),
+  scale.unit = TRUE,
+  quanti.sup = 1:4, # pollution en variable supp
+  graph = FALSE
+)
+```
+
+### Ici, à l'inverse, ce sont les variables de pollution qui sont supplémentaires. Donc elles ne contribuent pas à la construction des axes mais sont projetées a posteriori afin d’enrichir l’interprétation
+
+```{r}
+fviz_pca_biplot(
+  res_pca_meteo,
+  label = "var",        # uniquement les variables (flèches)
+  repel = TRUE,
+  col.ind = "grey60",   # individus discrets
+  col.var = "black",    # flèches bien visibles
+  ggtheme = theme_bw()
+) +
+  theme(
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text  = element_text(size = 12)
+  )
+```
+
+### Lorsque les variables météorologiques sont considérées comme actives, l’ACP met en évidence un premier axe structuré par un gradient climatique opposant des situations chaudes et sèches à des situations fraîches et humides, tandis que le second axe reflète principalement la variabilité des régimes atmosphériques liés à la pression, au vent et aux précipitations. La projection des variables de pollution en supplémentaires confirme que l’ozone est fortement associé aux conditions chaudes et sèches, alors que NO et NO₂ se projettent du côté des situations plus humides et stables. Cette configuration montre que la météorologie constitue un facteur structurant majeur de la variabilité de la pollution atmosphérique, la pollution apparaissant ici comme une conséquence des conditions météorologiques plutôt que comme l’élément structurant principal.
+
+
+# 3: 3ème analyse (personnelle):
+
+## Analyse personnelle: Rôle du vent et de la pluie dans la modulation conjointe des polluants.
+
+## Problématique: Dans quelle mesure le vent et les précipitations modulent-elles simultanément les niveaux de polluants primaires (NOx, PM10) et secondaires (ozone), indépendamment de la température ?
+
+## 3.1: Sélection des variables pertinentes:
+
+### On considère les variables de pollution: NO, NO2, O3, PM10. De dispersion: Vent Moyen, Pluie 24h et de contrôle météo: Température, Humidité.
+
+```{r}
+atmo_disp <- atmo2 %>% select(
+  NO, NO2, O3, PM10,
+  vent_moyen, pluie_24h,
+  temperature, humidite
+)
+atmo_disp
+```
+
+## 3.2: Analyse bivariée: 
+
+```{r}
+# O3 et vent
+ggplot(atmo2, aes(x = vent_moyen, y = O3)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Vent moyen", y = "O3",
+       title = "Influence du vent sur l'ozone") +
+  theme_minimal()
+```
+
+```{r}
+# NO2 et pluie
+ggplot(atmo2, aes(x = pluie_24h, y = NO2)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Pluie (24h)", y = "NO2",
+       title = "Effet de la pluie sur le NO2") +
+  theme_minimal()
+```
+
+## 3.3: ACP centrée sur la dispersion atmosphérique:
+
+```{r}
+res_pca_disp <- PCA(
+  atmo_disp,
+  scale.unit = TRUE,
+  graph = FALSE
+)
+```
+
+```{r}
+fviz_pca_biplot(
+  res_pca_disp,
+  label = "var",
+  repel = TRUE,
+  col.ind = "grey60",
+  col.var = "black",
+  ggtheme = theme_bw(),
+  title = "ACP – Dispersion atmosphérique et pollution"
+)
+```
+
+## 3.4: Commentaire et Analyse: 
+
+### L’analyse bivariée montre que l’augmentation de la vitesse du vent est globalement associée à une diminution des concentrations de polluants primaires, en particulier NO et NO₂, traduisant un effet de dispersion atmosphérique. L’ozone présente une relation plus complexe : son niveau diminue lorsque le vent est fort, mais reste élevé pour des vents modérés, suggérant un compromis entre dispersion et transport régional. De même, les précipitations sont associées à une baisse des concentrations de NO₂ et de PM10, ce qui reflète l’effet de lessivage de l’atmosphère. 
+
+
+### L’ACP confirme ces observations : le premier axe oppose clairement les situations de faible dispersion (vent faible, absence de pluie), associées à des niveaux élevés de NOx et PM10, aux situations de forte dispersion (vent et pluie), où les polluants primaires sont plus faibles. L’ozone se projette de manière intermédiaire, indiquant qu’il dépend moins directement des mécanismes locaux de dispersion et davantage des conditions thermiques et photochimiques. Cette analyse met ainsi en évidence que la dispersion atmosphérique constitue un déterminant clé de la pollution primaire, tandis que l’ozone répond à une dynamique plus régionale et photochimique.
+
+
+## 3.5: Conclusion:
+
+### Cette analyse personnelle montre que, au-delà de la température et de la saison, les mécanismes de dispersion atmosphérique jouent un rôle central dans la variabilité des polluants primaires, alors que l’ozone reste moins sensible à ces mécanismes locaux. L’approche multivariée permet ainsi de distinguer les polluants dominés par la dispersion de ceux gouvernés par des processus photochimiques plus globaux.
+
+
+
+

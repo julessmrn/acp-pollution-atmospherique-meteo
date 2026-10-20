@@ -1,0 +1,248 @@
+/* Import d'une police élégante */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;600&display=swap');
+
+/* =========================================================
+   PROJET 1 — feuille de style sobre & professionnelle
+   Fichier : projet.css
+   Compatibilité : R Markdown (html_document)
+   Auteur : pour Jules Marin
+   ========================================================= */
+
+/* =========================================================
+   Feuille de style R Markdown : Projet Pollution Périgueux
+   Auteur : Jules Marin
+   Style : sobre, professionnel, header épuré et élégant
+   ========================================================= */
+
+/* ---------- Général ---------- */
+body {
+    background: #ffffff;
+    color: #1a1a1a;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 950px;
+    margin: auto;
+    padding: 40px 30px;
+    line-height: 1.6;
+  }
+  
+  /* ---------- HEADER ÉLÉGANT ---------- */
+  .title, .subtitle, .author, .date {
+    text-align: center;
+    margin: 0;
+  }
+  
+  /* Titre principal */
+  h1.title {
+    font-family: "Playfair Display", Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6rem;
+    color: #0b172a;
+    margin-top: 0;
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.5px;
+  }
+  
+  /* Sous-titre : texte simple, sans encadré ni fond */
+  .subtitle {
+    font-family: "Source Sans Pro", "Segoe UI", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 500;
+    color: #111;
+    margin-bottom: 0.6rem;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  
+  /* Ligne de séparation fine et élégante */
+  header::after {
+    content: "";
+    display: block;
+    width: 120px;
+    height: 2px;
+    background: #0096ff;
+    margin: 16px auto 20px;
+    border-radius: 2px;
+    opacity: 0.7;
+  }
+  
+  /* Auteur et date : noirs, un peu plus grands et gras */
+  .author, .date {
+    font-family: "Source Sans Pro", sans-serif;
+    color: #000;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  
+  .author {
+    margin-top: 0.4rem;
+  }
+  
+  .date {
+    margin-top: 0.2rem;
+    font-style: normal;
+  }
+  
+  /* ---------- Graphiques centrés ---------- */
+  .figure, figure, img, .r-plot, .plot {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+  }
+  
+  .figure img, .plot img {
+    display: block;
+    margin: 0 auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    max-width: 100%;
+  }
+  
+  /* ---------- Titres ---------- */
+  
+  /* # Titre principal : gras + souligné noir */
+  h1:not(.title) {
+    font-weight: 800;
+    font-size: 2rem;
+    color: #000;
+    border-bottom: 3px solid #000;
+    padding-bottom: 8px;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  /* ## Sous-titres : souligné noir */
+  h2 {
+    font-weight: 700;
+    font-size: 1.6rem;
+    color: #000;
+    border-bottom: 2px solid #000;
+    padding-bottom: 4px;
+    margin-top: 1.8rem;
+    margin-bottom: 0.8rem;
+  }
+  
+  /* ### Sous-sous-titres : encadré bleu ciel */
+  h3 {
+    font-weight: 600;
+    font-size: 1.3rem;
+    color: #0a3d62;
+    background-color: #e6f4ff;
+    border: 1px solid #0096ff;
+    border-left: 5px solid #0096ff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-top: 1.5rem;
+    margin-bottom: 0.8rem;
+  }
+  
+  /* ---------- Paragraphes et texte ---------- */
+  p {
+    font-size: 1rem;
+    margin: 0.5rem 0 1rem;
+  }
+  
+  strong {
+    font-weight: 600;
+  }
+  
+  em {
+    color: #444;
+  }
+  
+  /* ---------- Code R ---------- */
+  pre, code {
+    font-family: "Fira Code", Consolas, monospace;
+  }
+  
+  pre {
+    background: #0b1220;
+    color: #e5e7eb;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+    overflow-x: auto;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 1.5rem;
+  }
+  
+  /* ---------- Lien et légendes ---------- */
+  a {
+    color: #0078d4;
+    text-decoration: none;
+  }
+  
+  a:hover {
+    text-decoration: underline;
+  }
+  
+  p.caption, figcaption {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 0.5rem;
+    font-style: italic;
+  }
+  
+  /* ---------- Tableaux ---------- */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+  
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+  }
+  
+  th {
+    background: #f0f4f8;
+    font-weight: 600;
+  }
+  
+  /* ---------- Blocs de commentaire / notes ---------- */
+  blockquote {
+    border-left: 4px solid #0096ff;
+    background: #f8fbff;
+    padding: 10px 16px;
+    color: #333;
+    border-radius: 6px;
+    font-style: italic;
+  }
+  
+  /* ---------- Pied de page ---------- */
+  footer, .date, .author {
+    text-align: center;
+    font-size: 0.95rem;
+    margin-top: 2rem;
+  }
+  
+  /* ---------- Responsive ---------- */
+  @media screen and (max-width: 768px) {
+    body {
+      padding: 20px;
+    }
+    h1.title { font-size: 2rem; }
+    h2 { font-size: 1.3rem; }
+    h3 { font-size: 1.1rem; }
+  }
+  
+
+/* --- Commentaires R en vert clair (couvre Pandoc + highlight.js) --- */
+.sourceCode .co,
+.sourceCode .c1,
+pre code span.co,
+pre code span.c1,
+code span.comment,
+code span.hljs-comment {
+  color: #43ce0c !important;   /* vert clair lisible sur fond dark */
+  font-style: italic;
+}
+
+
